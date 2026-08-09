@@ -551,7 +551,462 @@ async function computeAdvanced() {
 
 function computeSymbolicWithMethod(method) {
     try {
-        con…4444 tokens truncated…      `;
+        const expr = state.currentFunction.replace(/\*/g, ' ').replace(/log/g, 'ln');
+        const result = Algebrite.run(`integral(${expr}, x)`);
+        const resultStr = String(result);
+
+        if (resultStr.includes('integral(')) {
+            return {
+                type: 'advanced',
+                symbolic: 'Chưa tìm được biểu thức dạng đóng',
+                method: method,
+                suggestion: getMethodSuggestion(method),
+                original: state.currentFunction,
+                steps: []
+            };
+        }
+
+        return {
+            type: 'advanced',
+            symbolic: resultStr + ' + C',
+            method: method,
+            original: state.currentFunction,
+            steps: generateAdvancedSteps(method)
+        };
+    } catch (error) {
+        throw new Error('Tính tích phân nâng cao thất bại: ' + error.message);
+    }
+}
+
+function computeDefiniteWithMethod(lower, upper, method) {
+    const points = parseInt(document.getElementById('resolution').value);
+    const n = points % 2 === 0 ? points : points + 1;
+    const h = (upper - lower) / n;
+    let sum = 0;
+    let errors = [];
+
+    try {
+        const funcStr = state.currentFunction;
+
+        for (let i = 0; i <= n; i++) {
+            const x = lower + i * h;
+
+            let y;
+            try {
+                y = hybridEvaluate(funcStr, { x: x });
+            } catch (evalError) {
+                errors.push(`x=${x.toFixed(6)}`);
+                continue;
+            }
+
+            if (!isFinite(y)) {
+                errors.push(`x=${x.toFixed(6)}: infinity`);
+                continue;
+            }
+
+            if (i === 0 || i === n) {
+                sum += y;
+            } else if (i % 2 === 0) {
+                sum += 2 * y;
+            } else {
+                sum += 4 * y;
+            }
+        }
+
+        if (errors.length > n * 0.1) {
+            throw new Error(`Có quá nhiều điểm gián đoạn (${errors.length} điểm không tính được)`);
+        }
+
+        const result = (h / 3) * sum;
+        const precision = parseInt(document.getElementById('precision').value);
+
+        return {
+            type: 'advanced',
+            value: result.toFixed(precision),
+            lower: lower,
+            upper: upper,
+            method: method + ' (tính gần đúng)',
+            points: n,
+            warnings: errors.length > 0 ? `Đã bỏ qua ${errors.length} điểm gián đoạn` : null,
+            original: state.currentFunction,
+            steps: generateAdvancedSteps(method, true)
+        };
+    } catch (error) {
+        throw new Error('Tính tích phân nâng cao thất bại: ' + error.message);
+    }
+}
+
+function getMethodSuggestion(method) {
+    const suggestions = {
+        'substitution': 'Hãy tìm u = g(x) sao cho du xuất hiện trong biểu thức dưới dấu tích phân.',
+        'parts': 'Dùng công thức ∫u dv = uv − ∫v du.',
+        'partial': 'Phân tích hàm hữu tỉ thành các phân thức đơn giản.',
+        'trig': 'Dùng đồng nhất thức hoặc phép đổi biến lượng giác.'
+    };
+    return suggestions[method] || 'Có thể cân nhắc phương pháp tính gần đúng.';
+}
+
+// ==================== DIFFERENTIAL EQUATIONS ====================
+async function computeDifferential() {
+    const odeType = document.getElementById('odeType').value;
+    const initialCond = document.getElementById('initialCond').value.trim();
+
+    return {
+        type: 'differential',
+        odeType: odeType,
+        equation: state.currentFunction,
+        solution: 'Chức năng giải phương trình vi phân chưa được cài đặt hoàn chỉnh.',
+        note: 'Kết quả ở chế độ này chỉ mang tính thử nghiệm; nên kiểm chứng bằng phần mềm chuyên dụng.',
+        initialConditions: initialCond || 'Chưa nhập',
+        steps: generateODESteps(odeType)
+    };
+}
+
+// ==================== SERIES EXPANSION ====================
+async function computeSeries() {
+    const seriesType = document.getElementById('seriesType').value;
+    const point = parseFloat(document.getElementById('expansionPoint').value) || 0;
+    const terms = parseInt(document.getElementById('numTerms').value) || 5;
+
+    try {
+        const expr = state.currentFunction.replace(/\*/g, ' ').replace(/log/g, 'ln');
+
+        // Use Algebrite for Taylor series
+        const seriesExpr = `taylor(${expr}, x, ${point}, ${terms})`;
+        const result = Algebrite.run(seriesExpr);
+        const resultStr = String(result);
+
+        return {
+            type: 'series',
+            seriesType: seriesType,
+            expansion: resultStr,
+            point: point,
+            terms: terms,
+            original: state.currentFunction,
+            steps: generateSeriesSteps(seriesType, point, terms)
+        };
+    } catch (error) {
+        // Fallback: compute derivatives manually
+        return computeSeriesNumerical(point, terms);
+    }
+}
+
+function computeSeriesNumerical(point, terms) {
+    try {
+        const seriesTerms = [];
+        let node = math.parse(state.currentFunction);
+
+        for (let n = 0; n < terms; n++) {
+            const derivative = n === 0 ? node : math.derivative(node, 'x');
+            const value = derivative.evaluate({ x: point });
+            const factorial = math.factorial(n);
+            const coefficient = value / factorial;
+
+            if (Math.abs(coefficient) > 1e-10) {
+                seriesTerms.push({
+                    order: n,
+                    coefficient: coefficient,
+                    term: `${coefficient.toFixed(4)} * (x - ${point})^${n}`
+                });
+            }
+
+            if (n < terms - 1) {
+                node = derivative;
+            }
+        }
+
+        return {
+            type: 'series',
+            seriesType: 'taylor',
+            terms: seriesTerms,
+            point: point,
+            numTerms: terms,
+            original: state.currentFunction,
+            steps: generateSeriesSteps('taylor', point, terms)
+        };
+    } catch (error) {
+        throw new Error('Khai triển chuỗi thất bại: ' + error.message);
+    }
+}
+
+// ==================== MULTIVARIABLE CALCULUS ====================
+async function computeMultivariable() {
+    const operation = document.getElementById('multiOp').value;
+    const varsInput = document.getElementById('multiVars').value;
+    const vars = varsInput.split(',').map(v => v.trim()).filter(v => v);
+
+    if (vars.length < 2) {
+        throw new Error('Hãy nhập ít nhất hai biến, ví dụ: x,y.');
+    }
+
+    try {
+        switch(operation) {
+            case 'partial':
+                return computePartialDerivatives(vars);
+            case 'gradient':
+                return computeGradient(vars);
+            case 'divergence':
+                return computeDivergence(vars);
+            case 'curl':
+                return computeCurl(vars);
+            case 'double':
+                return computeDoubleIntegral(vars);
+            default:
+                throw new Error('Phép toán chưa được hỗ trợ.');
+        }
+    } catch (error) {
+        throw new Error('Tính toán nhiều biến thất bại: ' + error.message);
+    }
+}
+
+function computePartialDerivatives(vars) {
+    try {
+        const node = math.parse(state.currentFunction);
+        const partials = {};
+
+        for (const v of vars) {
+            try {
+                const partial = math.derivative(node, v);
+                partials[v] = math.simplify(partial).toString();
+            } catch (e) {
+                partials[v] = `Không thể tính ∂/∂${v}`;
+            }
+        }
+
+        return {
+            type: 'multivariable',
+            operation: 'Partial Derivatives',
+            variables: vars,
+            result: partials,
+            original: state.currentFunction,
+            steps: generateMultivariableSteps('partial', vars)
+        };
+    } catch (error) {
+        throw new Error('Tính đạo hàm riêng thất bại: ' + error.message);
+    }
+}
+
+function computeGradient(vars) {
+    try {
+        const node = math.parse(state.currentFunction);
+        const gradient = [];
+
+        for (const v of vars) {
+            try {
+                const partial = math.derivative(node, v);
+                gradient.push(math.simplify(partial).toString());
+            } catch (e) {
+                gradient.push('0');
+            }
+        }
+
+        return {
+            type: 'multivariable',
+            operation: 'Gradient Vector',
+            variables: vars,
+            result: gradient,
+            notation: `∇f = (${gradient.join(', ')})`,
+            original: state.currentFunction,
+            steps: generateMultivariableSteps('gradient', vars)
+        };
+    } catch (error) {
+        throw new Error('Tính gradient thất bại: ' + error.message);
+    }
+}
+
+function computeDivergence(vars) {
+    // For divergence, we need a vector field
+    // Treat the function as one component and compute symbolic divergence
+    try {
+        const node = math.parse(state.currentFunction);
+        let divergence = 0;
+
+        for (const v of vars) {
+            try {
+                const partial = math.derivative(node, v);
+                const simplified = math.simplify(partial);
+                divergence = `${divergence} + ∂(${state.currentFunction})/∂${v}`;
+            } catch (e) {
+                // Continue
+            }
+        }
+
+        return {
+            type: 'multivariable',
+            operation: 'Divergence',
+            variables: vars,
+            result: `Div F = ${divergence}`,
+            note: 'Chức năng phân kỳ hiện mới ở mức minh họa và chưa nhận đầy đủ các thành phần của trường vectơ.',
+            original: state.currentFunction,
+            steps: generateMultivariableSteps('divergence', vars)
+        };
+    } catch (error) {
+        throw new Error('Tính độ phân kỳ thất bại: ' + error.message);
+    }
+}
+
+function computeCurl(vars) {
+    if (vars.length !== 2 && vars.length !== 3) {
+        throw new Error('Độ xoáy yêu cầu trường vectơ hai hoặc ba chiều.');
+    }
+
+    try {
+        const node = math.parse(state.currentFunction);
+
+        if (vars.length === 2) {
+            // 2D curl (scalar vorticity)
+            const dx = math.derivative(node, vars[0]);
+            const dy = math.derivative(node, vars[1]);
+
+            return {
+                type: 'multivariable',
+                operation: 'Curl (2D Vorticity)',
+                variables: vars,
+                result: `∂f/∂${vars[1]} - ∂f/∂${vars[0]}`,
+                note: '2D curl computed as scalar vorticity',
+                original: state.currentFunction,
+                steps: generateMultivariableSteps('curl', vars)
+            };
+        } else {
+            return {
+                type: 'multivariable',
+                operation: 'Curl (3D)',
+                variables: vars,
+                result: 'Full 3D curl requires vector field components',
+                note: 'Provide separate Fx, Fy, Fz components for complete 3D curl',
+                original: state.currentFunction,
+                steps: generateMultivariableSteps('curl', vars)
+            };
+        }
+    } catch (error) {
+        throw new Error('Tính độ xoáy thất bại: ' + error.message);
+    }
+}
+
+function computeDoubleIntegral(vars) {
+    if (vars.length < 2) {
+        throw new Error('Tích phân kép yêu cầu ít nhất hai biến.');
+    }
+
+    // For demonstration, compute a simple rectangular region
+    return {
+        type: 'multivariable',
+        operation: 'Double Integral',
+        variables: vars,
+        result: 'Chưa thể tính tích phân kép vì chưa có vùng lấy tích phân.',
+        note: 'Chức năng tích phân kép hiện mới ở mức minh họa.',
+        suggestion: 'Với miền hình chữ nhật, có thể tính lần lượt theo từng biến.',
+        original: state.currentFunction,
+        steps: generateMultivariableSteps('double', vars)
+    };
+}
+
+// ==================== STEP GENERATION ====================
+function generateDerivativeSteps(order) {
+    return [
+        { num: 1, title: 'Xác định phép đạo hàm', content: `Tính đạo hàm ${order === 1 ? 'cấp một' : 'cấp hai'} của f(x) = ${state.currentFunction}` },
+        { num: 2, title: 'Áp dụng các quy tắc đạo hàm', content: 'Dùng quy tắc lũy thừa, tích, thương hoặc hàm hợp khi cần.' },
+        { num: 3, title: 'Rút gọn kết quả', content: 'Thu gọn các hạng tử đồng dạng và rút gọn biểu thức.' }
+    ];
+}
+
+function generateIntegralSteps(method) {
+    if (method === 'symbolic') {
+        return [
+            { num: 1, title: 'Nhận dạng dạng nguyên hàm', content: 'Phân tích cấu trúc của hàm dưới dấu tích phân.' },
+            { num: 2, title: 'Áp dụng quy tắc tích phân', content: 'Sử dụng phương pháp tích phân phù hợp.' },
+            { num: 3, title: 'Thêm hằng số tích phân', content: 'Thêm +C đối với nguyên hàm.' }
+        ];
+    }
+    return [
+        { num: 1, title: 'Đối chiếu công thức', content: 'Tìm thấy dạng nguyên hàm tương ứng trong bảng công thức.' },
+        { num: 2, title: 'Áp dụng công thức', content: 'Sử dụng công thức nguyên hàm cơ bản.' },
+        { num: 3, title: 'Thêm hằng số', content: 'Thêm +C vào kết quả nguyên hàm.' }
+    ];
+}
+
+function generateDefiniteSteps(lower, upper, result, points) {
+    return [
+        { num: 1, title: 'Lập tích phân xác định', content: `∫[${lower}, ${upper}] f(x) dx` },
+        { num: 2, title: 'Áp dụng quy tắc Simpson', content: `Dùng ${points} điểm mẫu để tính gần đúng.` },
+        { num: 3, title: 'Tính tổng có trọng số', content: 'Tính tổng các giá trị hàm số tại những điểm mẫu theo trọng số Simpson.' },
+        { num: 4, title: 'Kết quả cuối cùng', content: `Kết quả ≈ ${result}` }
+    ];
+}
+
+function generateAdvancedSteps(method, isNumerical = false) {
+    const base = [
+        { num: 1, title: `Phương pháp: ${method}`, content: `Sử dụng phương pháp tích phân ${method}.` },
+        { num: 2, title: 'Thực hiện tính toán', content: isNumerical ? 'Tính gần đúng bằng quy tắc Simpson.' : 'Thử tính nguyên hàm dưới dạng ký hiệu.' },
+        { num: 3, title: 'Rút gọn', content: 'Rút gọn và kiểm tra lại kết quả.' }
+    ];
+    return base;
+}
+
+function generateODESteps(odeType) {
+    return [
+        { num: 1, title: `Phân loại: ${odeType}`, content: 'Xác định cấp và dạng của phương trình vi phân.' },
+        { num: 2, title: 'Phương pháp giải', content: 'Chế độ này chưa cài đặt bộ giải phương trình vi phân hoàn chỉnh.' },
+        { num: 3, title: 'Lưu ý', content: 'Hãy dùng phần mềm chuyên dụng và kiểm chứng kết quả trước khi sử dụng.' }
+    ];
+}
+
+function generateSeriesSteps(seriesType, point, terms) {
+    return [
+        { num: 1, title: `Khai triển ${seriesType}`, content: `Khai triển tại tâm a = ${point}.` },
+        { num: 2, title: 'Tính các đạo hàm', content: `Tính ${terms} đạo hàm đầu tiên tại x = ${point}.` },
+        { num: 3, title: 'Lập chuỗi', content: 'Sử dụng công thức Taylor hoặc Maclaurin để lập chuỗi.' },
+        { num: 4, title: 'Kết quả', content: `Khai triển gồm ${terms} số hạng.` }
+    ];
+}
+
+function generateMultivariableSteps(operation, vars) {
+    return [
+        { num: 1, title: `Tính ${operation}`, content: `Thực hiện trên hàm có các biến: ${vars.join(', ')}.` },
+        { num: 2, title: 'Giải tích nhiều biến', content: 'Đạo hàm riêng và gradient được tính bằng phép biến đổi ký hiệu.' },
+        { num: 3, title: 'Lưu ý', content: 'Các chức năng phân kỳ, độ xoáy và tích phân kép vẫn đang ở mức thử nghiệm.' }
+    ];
+}
+
+// ==================== DISPLAY RESULTS ====================
+function displayResult(result) {
+    const container = document.getElementById('results');
+    const stepsContainer = document.getElementById('steps');
+
+    let html = '';
+
+    // Build result card based on type
+    if (result.type === 'derivative' || result.type === 'derivative2') {
+        html += `
+            <div class="result-card">
+                <div class="result-title">
+                    <div class="result-icon">∂</div>
+                    <span>Đạo hàm ${result.type === 'derivative' ? 'cấp một' : 'cấp hai'}</span>
+                </div>
+                <div class="result-content">
+                    <strong>${result.type === 'derivative' ? "f'(x)" : "f''(x)"} =</strong> ${escapeHtml(result.symbolic)}
+                </div>
+                <div class="result-meta">
+                    Hàm số ban đầu: ${escapeHtml(result.original)}
+                </div>
+            </div>
+        `;
+    } else if (result.type === 'integral') {
+        html += `
+            <div class="result-card">
+                <div class="result-title">
+                    <div class="result-icon">∫</div>
+                    <span>Nguyên hàm</span>
+                </div>
+                <div class="result-content">
+                    <strong>∫ f(x) dx =</strong> ${escapeHtml(result.symbolic)}
+                </div>
+                <div class="result-meta">
+                    Phương pháp: ${result.method}<br>
+                    ${result.note ? result.note : ''}
+                </div>
+            </div>
+        `;
     } else if (result.type === 'definite') {
         html += `
             <div class="result-card">
