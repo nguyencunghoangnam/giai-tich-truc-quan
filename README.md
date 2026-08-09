@@ -2,6 +2,8 @@
 
 Ứng dụng web tiếng Việt hỗ trợ khám phá đạo hàm, nguyên hàm, tích phân xác định, khai triển chuỗi và đồ thị 2D/3D ngay trong trình duyệt.
 
+**Dùng trực tuyến:** [nguyencunghoangnam.github.io/giai-tich-truc-quan](https://nguyencunghoangnam.github.io/giai-tich-truc-quan/)
+
 ## Nguồn gốc và quyền Việt hóa
 
 Dự án này là bản Việt hóa và điều chỉnh từ [Calculus Suite Pro](https://github.com/ibrahimalee/Calculus-Suite), do Ibrahemeogoblin phát hành theo giấy phép MIT.
