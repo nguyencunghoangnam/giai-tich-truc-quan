@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Công cụ giải tích trực quan bằng tiếng Việt: đạo hàm, tích phân, chuỗi và đồ thị 2D/3D.">
+    <title>Giải tích Trực quan</title>
+    <script src="js/lib-guard.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/algebrite/1.4.0/algebrite.bundle-for-browser.js"
+            data-library="Algebrite"
+            data-fallback="https://cdn.jsdelivr.net/npm/algebrite@1.4.0/dist/algebrite.bundle-for-browser.js"
+            onerror="handleLibraryFallback(this)"></script>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="hero-bg"></div>
+
+    <div class="container">
+        <header>
+            <div class="hero-pill">Bản Việt hóa · Dựa trên Calculus Suite Pro</div>
+            <h1>⚡ Giải tích Trực quan</h1>
+            <p class="subtitle">Tính toán ký hiệu, biểu diễn đồ thị trực tiếp và thao tác thuận tiện trong một công cụ duy nhất.</p>
+            <div class="hero-meta">
+                <span>Tính toán ký hiệu và số</span>
+                <span>Đồ thị 2D / 3D trực tiếp</span>
+                <span>Giao diện tiếng Việt</span>
+            </div>
+            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Đổi giao diện sáng hoặc tối" title="Đổi giao diện sáng hoặc tối">☀️</button>
+        </header>
+
+        <div class="main-grid">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="section">
+                    <div class="label">
+                        <span>📝</span>
+                        <span>Nhập hàm số</span>
+                    </div>
+                    <textarea id="functionInput" placeholder="Nhập biểu thức, ví dụ: x^2 + sin(x) * e^x" oninput="validateFunction()"></textarea>
+                    <div id="preview" class="preview-box">Nhập một hàm số để bắt đầu...</div>
+                </div>
+
+                <div class="section">
+                    <div class="label">
+                        <span>⚡</span>
+                        <span>Mẫu nhập nhanh</span>
+                    </div>
+                    <div class="templates-grid">
+                        <button class="template-btn" onclick="insertTemplate('x^2')">x²</button>
+                        <button class="template-btn" onclick="insertTemplate('sin(x)')">sin</button>
+                        <button class="template-btn" onclick="insertTemplate('e^x')">eˣ</button>
+                        <button class="template-btn" onclick="insertTemplate('log(x)')">ln</button>
+                        <button class="template-btn" onclick="insertTemplate('1/x')">1/x</button>
+                        <button class="template-btn" onclick="insertTemplate('sqrt(x)')">√x</button>
+                        <button class="template-btn" onclick="insertTemplate('x^3-2*x')">bậc ba</button>
+                        <button class="template-btn" onclick="insertTemplate('tan(x)')">tan</button>
+                        <button class="template-btn" onclick="insertTemplate('e^(-x^2)')">Gauss</button>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="label">
+                        <span>🎯</span>
+                        <span>Chế độ tính toán</span>
+                    </div>
+                    <select id="operationMode" onchange="updateModeOptions()">
+                        <option value="basic">Giải tích cơ bản</option>
+                        <option value="advanced">Tích phân nâng cao</option>
+                        <option value="differential">Phương trình vi phân (thử nghiệm)</option>
+                        <option value="series">Khai triển chuỗi</option>
+                        <option value="multivariable">Giải tích nhiều biến (thử nghiệm)</option>
+                    </select>
+
+                    <div id="modeOptions" class="mode-options hidden"></div>
+                </div>
+
+                <div class="section">
+                    <div class="label">
+                        <span>⚙️</span>
+                        <span>Thiết lập</span>
+                    </div>
+                    <div class="settings-section">
+                        <div class="setting-row">
+                            <div class="setting-label">
+                                <span>Số chữ số thập phân</span>
+                                <span class="setting-value" id="precisionValue">4</span>
+                            </div>
+                            <input type="range" class="slider" id="precision" min="2" max="10" value="4" oninput="updatePrecision(this.value)">
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-label">
+                                <span>Độ phân giải đồ thị</span>
+                                <span class="setting-value" id="resolutionValue">200</span>
+                            </div>
+                            <input type="range" class="slider" id="resolution" min="50" max="500" value="200" step="50" oninput="updateResolution(this.value)">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="btn-grid">
+                    <button class="btn btn-primary" onclick="compute()" id="computeBtn">
+                        <span>🚀</span>
+                        <span>Tính toán</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="clearAll()">
+                        <span>🗑️</span>
+                        <span>Xóa</span>
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Workspace -->
+            <main class="workspace">
+                <div class="tabs">
+                    <button class="tab active" data-tab="results" onclick="switchTab('results', this)">📊 Kết quả</button>
+                    <button class="tab" data-tab="plot" onclick="switchTab('plot', this)">📈 Đồ thị 2D</button>
+                    <button class="tab" data-tab="plot3d" onclick="switchTab('plot3d', this)">🎮 Đồ thị 3D</button>
+                    <button class="tab" data-tab="steps" onclick="switchTab('steps', this)">📚 Các bước</button>
+                </div>
+
+                <div id="results" class="tab-content active">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🧮</div>
+                        <h3>Sẵn sàng tính toán</h3>
+                        <p>Nhập hàm số và chọn phép toán để bắt đầu</p>
+                    </div>
+                </div>
+
+                <div id="plot" class="tab-content">
+                    <div class="plot-container">
+                        <div id="plot2d"></div>
+                    </div>
+                </div>
+
+                <div id="plot3d" class="tab-content">
+                    <div class="plot-container">
+                        <div id="plot3dDiv"></div>
+                    </div>
+                </div>
+
+                <div id="steps" class="tab-content">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📖</div>
+                        <h3>Hướng dẫn từng bước</h3>
+                        <p>Các bước tính toán sẽ xuất hiện tại đây</p>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <footer class="cupertino-footer">
+        <div class="footer-inner">
+            <div class="footer-copy">
+                Bản Việt hóa phục vụ học tập và khám phá giải tích.
+            </div>
+            <div class="footer-contact">
+                <a href="https://github.com/ibrahimalee/Calculus-Suite" target="_blank" rel="noopener">Mã nguồn gốc</a>
+                <span class="footer-bullet">•</span>
+                <a href="LICENSE" target="_blank" rel="noopener">Giấy phép MIT</a>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
